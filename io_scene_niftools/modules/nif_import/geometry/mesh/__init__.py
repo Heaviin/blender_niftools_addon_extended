@@ -1,4 +1,4 @@
-"""This module contains helper methods to import Mesh information."""
+"""This module contains helper methods to import mesh data."""
 
 # ***** BEGIN LICENSE BLOCK *****
 #
@@ -38,6 +38,10 @@
 # ***** END LICENSE BLOCK *****
 
 import numpy as np
+
+import bpy
+import bmesh
+import mathutils
 
 import io_scene_niftools.utils.logging
 from io_scene_niftools.modules.nif_import.animation.morph import MorphAnimation
@@ -124,40 +128,43 @@ class Mesh:
             if len(normals) == 0:
                 normals = None
         elif isinstance(n_block, NifClasses.NiTriBasedGeom):
-
-            # shortcut for mesh geometry data
             n_tri_data = n_block.data
+
             if not n_tri_data:
                 raise io_scene_niftools.utils.logging.NifError(f"No shape data in {node_name}")
+
             vertices = n_tri_data.vertices
             triangles = n_block.get_triangles()
             uvs = n_tri_data.uv_sets
+            
             if n_tri_data.has_vertex_colors:
                 vertex_colors = n_tri_data.vertex_colors
+
             if n_tri_data.has_normals:
                 normals = n_tri_data.normals
 
-        # create raw mesh from vertices and triangles
+        # Create raw mesh from vertices and triangles
         b_mesh.from_pydata(vertices, [], triangles)
         b_mesh.update()
 
-        # must set faces to smooth before setting custom normals, or the normals bug out!
+        # Must set faces to smooth before setting custom normals, or the normals bug out!
         is_smooth = True if (not (normals is None) or n_block.is_skin()) else False
         self.set_face_smooth(b_mesh, is_smooth)
 
-        # store additional data layers
+        # Store additional data layers
         if uvs is not None:
             Vertex.map_uv_layer(b_mesh, uvs)
+
         if vertex_colors is not None:
-            # TODO: Add vertex vs. face corner setting to import operator UI
-            self.map_vertex_colors_to_corners(b_mesh, vertex_colors)
+            self.map_vertex_colors(b_mesh, vertex_colors)
+
         if normals is not None:
-            # for some cases, normals can be four-component structs instead of 3, discard the 4th.
+            # In some cases, normals can be four-component structs instead of 3; discard the 4th.
             Vertex.map_normals(b_mesh, np.array(normals)[:, :3])
 
         self.material_property_helper.import_material_properties(n_block, b_obj)
 
-        # import skinning info, for meshes affected by bones
+        # Import skinning info, for meshes affected by bones
         if n_block.is_skin():
             VertexGroup.import_skin(n_block, b_obj)
 
@@ -165,27 +172,201 @@ class Mesh:
         if NifOp.props.animation:
             self.morph_anim.import_morph_controller(n_block, b_obj)
 
-        # todo [mesh] remove doubles here using blender operator
+        self.weld_and_mark_sharp(b_mesh, b_obj)
+        b_mesh.update()
 
     @staticmethod
     def set_face_smooth(b_mesh, smooth):
-        """set face smoothing and material"""
+        """Set face smoothing and material"""
 
         for poly in b_mesh.polygons:
             poly.use_smooth = smooth
             poly.material_index = 0  # only one material
 
     @staticmethod
-    def map_vertex_colors_to_corners(b_mesh, vertex_colors):
-        """Map vertex colors to face corners in a mesh."""
+    def weld_and_mark_sharp(
+        b_mesh,
+        b_obj,
+        epsilon=1e-6,
+        normal_threshold=0.999,
+        node_name="mesh",
+    ):
+        """
+        This should weld all duplicate vertices and convert the mesh to use Blender's face normals and smooth shading.
+        Custom normals only exist for smooth edges that are duplicated in the nif due to UV/vertex color seams.
+        Open edges without custom normals are marked as sharp.
+        All overlapping edges are merged except when their parent faces have opposite normals to preserve backface shells.
+        Leftover open edges are then smoothed for clarity.
+        Custom split normals are removed after the operation as they are no longer needed.
+        """
 
-        color_attr = b_mesh.color_attributes.new(name="RGBA", type="BYTE_COLOR", domain="CORNER")
+        def _pos_key_from_vec(vec, decimals=6):
+            return (round(vec.x, decimals), round(vec.y, decimals), round(vec.z, decimals))
 
-        corner_colors = []
+        def _edge_key_from_positions(pos_a, pos_b):
+            return (pos_a, pos_b) if pos_a <= pos_b else (pos_b, pos_a)
+
+        def _norm_aligned(n1, n2):
+            return n1.dot(n2) > normal_threshold
+
+        if len(b_mesh.vertices) == 0 or len(b_mesh.polygons) == 0 or len(b_mesh.loops) == 0:
+            NifLog.debug(f"Skipping merge/sharp/seam: empty/degenerate mesh '{node_name}'")
+            return
+
+        loop_normals = [ln.normal.copy() for ln in b_mesh.loops]
+
+        corner_normal_by_poly_vert = {}
         for poly in b_mesh.polygons:
-            for loop_index in poly.loop_indices:
-                vertex_index = b_mesh.loops[loop_index].vertex_index
-                corner_colors.append(vertex_colors[vertex_index])
+            for li in poly.loop_indices:
+                v_idx = b_mesh.loops[li].vertex_index
+                corner_normal_by_poly_vert[(poly.index, v_idx)] = loop_normals[li]
 
-        flat_colors = [channel for color in corner_colors for channel in color]
-        color_attr.data.foreach_set("color", flat_colors)
+        vertices_co = [v.co.copy() for v in b_mesh.vertices]
+
+        edge_incidence = {}
+        for poly in b_mesh.polygons:
+            v_indices = list(poly.vertices)
+            if len(v_indices) < 2:
+                continue
+            for i in range(len(v_indices)):
+                vA_idx = v_indices[i]
+                vB_idx = v_indices[(i + 1) % len(v_indices)]
+
+                posA = _pos_key_from_vec(vertices_co[vA_idx])
+                posB = _pos_key_from_vec(vertices_co[vB_idx])
+                ekey = _edge_key_from_positions(posA, posB)
+
+                nA = corner_normal_by_poly_vert.get((poly.index, vA_idx))
+                nB = corner_normal_by_poly_vert.get((poly.index, vB_idx))
+                edge_incidence.setdefault(ekey, []).append((nA, nB))
+
+        sharp_edge_keys = set()
+        manifold_edges = 0
+        nonmanifold_edges = 0
+        boundary_geo_edges = 0
+
+        for ekey, entries in edge_incidence.items():
+            if len(entries) == 1:
+                boundary_geo_edges += 1
+                continue
+            if len(entries) != 2:
+                nonmanifold_edges += 1
+                continue
+
+            manifold_edges += 1
+            nA0, nB0 = entries[0]
+            nA1, nB1 = entries[1]
+            if nA0 is None or nB0 is None or nA1 is None or nB1 is None:
+                continue
+
+            direct = _norm_aligned(nA0, nA1) and _norm_aligned(nB0, nB1)
+            swapped = _norm_aligned(nA0, nB1) and _norm_aligned(nB0, nA1)
+            if not (direct or swapped):
+                sharp_edge_keys.add(ekey)
+
+        NifLog.debug(
+            f"Sharp inference for '{node_name}': manifold={manifold_edges}, boundary_geo={boundary_geo_edges}, "
+            f"nonmanifold={nonmanifold_edges}, sharp_keys={len(sharp_edge_keys)}"
+        )
+
+        bm = bmesh.new()
+        bm.from_mesh(b_mesh)
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+        initial_vert_count = len(bm.verts)
+
+        boundary_position_map = {}
+        for v in bm.verts:
+            if any(e.is_boundary for e in v.link_edges):
+                boundary_position_map.setdefault(_pos_key_from_vec(v.co), []).append(v)
+
+        merged_buckets = 0
+        buckets_skipped_opposite = 0
+
+        for _, verts in boundary_position_map.items():
+            if len(verts) < 2:
+                continue
+
+            # Avoid collapsing double-sided coplanar shells.
+            face_normals = [f.normal.copy() for v in verts for f in v.link_faces]
+            skip_bucket = False
+            for i in range(len(face_normals)):
+                ni = face_normals[i]
+                for j in range(i + 1, len(face_normals)):
+                    if ni.dot(face_normals[j]) < -normal_threshold:
+                        skip_bucket = True
+                        break
+                if skip_bucket:
+                    break
+
+            if skip_bucket:
+                buckets_skipped_opposite += 1
+                continue
+
+            before_bucket = len(bm.verts)
+            bmesh.ops.remove_doubles(bm, verts=verts, dist=epsilon)
+            if len(bm.verts) < before_bucket:
+                merged_buckets += 1
+
+        final_vert_count = len(bm.verts)
+
+        NifLog.debug(
+            f"Merging done for '{node_name}': merged_buckets={merged_buckets}, "
+            f"skipped_buckets_opposite={buckets_skipped_opposite}, verts_before={initial_vert_count}, "
+            f"verts_after={final_vert_count}, merged_verts={initial_vert_count - final_vert_count}"
+        )
+
+        bm.to_mesh(b_mesh)
+        bm.free()
+        b_mesh.update()
+
+        bm2 = bmesh.new()
+        bm2.from_mesh(b_mesh)
+        bm2.verts.ensure_lookup_table()
+        bm2.edges.ensure_lookup_table()
+
+        sharp_applied_inferred = 0
+        for e in bm2.edges:
+            pos0 = _pos_key_from_vec(e.verts[0].co)
+            pos1 = _pos_key_from_vec(e.verts[1].co)
+            ekey = _edge_key_from_positions(pos0, pos1)
+
+            if ekey in sharp_edge_keys:
+                e.smooth = False
+                sharp_applied_inferred += 1
+
+        bm2.to_mesh(b_mesh)
+        bm2.free()
+        b_mesh.update()
+
+        bm3 = bmesh.new()
+        bm3.from_mesh(b_mesh)
+        bm3.edges.ensure_lookup_table()
+
+        boundary_cleared = 0
+        for e in bm3.edges:
+            if e.is_boundary and not e.smooth:
+                e.smooth = True
+                boundary_cleared += 1
+
+        bm3.to_mesh(b_mesh)
+        bm3.free()
+        b_mesh.update()
+
+        NifLog.debug(
+            f"Sharps applied on '{node_name}': inferred={sharp_applied_inferred}, boundary_cleared={boundary_cleared}"
+        )
+
+        try:
+            attr_name = "custom_normal"
+            if hasattr(b_mesh, "attributes") and attr_name in b_mesh.attributes:
+                b_mesh.attributes.remove(b_mesh.attributes[attr_name])
+                NifLog.debug(f"Removed attribute '{attr_name}' from mesh for '{node_name}'")
+
+            b_mesh.calc_normals()
+            b_mesh.update()
+
+        except Exception as ex:
+            NifLog.debug(f"Failed to remove custom normals attribute for '{node_name}': {ex!r}")
