@@ -44,46 +44,40 @@ from io_scene_niftools.utils.singleton import NifOp
 
 
 class Vertex:
-
     @staticmethod
     def map_vertex_colors(b_mesh, vertex_colors):
-        # in Blender 3.2, vertex_colors was deprecated (https://wiki.blender.org/wiki/Reference/Release_Notes/3.2/Python_API)
-        # so use Color attribute instead when 3.2 or greater
-        if bpy.app.version >= (3, 2, 0):
-            b_mesh.color_attributes.new(name="RGBA", type="BYTE_COLOR", domain="POINT")
-            b_mesh.color_attributes[-1].data.foreach_set("color",
-                                                         [channel for color in vertex_colors for channel in color])
-        else:
-            b_mesh.vertex_colors.new(name="RGBA")
-            b_mesh.vertex_colors[-1].data.foreach_set("color", [channel for col in
-                                                                [vertex_colors[loop.vertex_index] for loop in
-                                                                 b_mesh.loops] for channel in
-                                                                (col.r, col.g, col.b, col.a)])
+        NifLog.info(f"Vertex colors: {vertex_colors}")
+
+        color_attr = b_mesh.color_attributes.new(name="Color", type="FLOAT_COLOR", domain="CORNER")
+
+        corner_colors = []
+        for poly in b_mesh.polygons:
+            for loop_index in poly.loop_indices:
+                vertex_index = b_mesh.loops[loop_index].vertex_index
+                corner_colors.append(vertex_colors[vertex_index])
+
+        flat_colors = [channel for color in corner_colors for channel in color]
+        color_attr.data.foreach_set("color", flat_colors)
 
     @staticmethod
     def map_uv_layer(b_mesh, uv_sets):
-        """ UV coordinates, NIF files only support 'sticky' UV coordinates, and duplicates vertices to emulate hard edges and UV seam.
-            So whenever a hard edge or a UV seam is present the mesh, vertices are duplicated.
-            Blender only must duplicate vertices for hard edges; duplicating for UV seams would introduce unnecessary hard edges."""
-
-        # "sticky" UV coordinates: these are transformed in Blender UV's
+        # "Sticky" UV coordinates: these are transformed in Blender UVs
         for uv_i, uv_set in enumerate(uv_sets):
-            b_mesh.uv_layers.new(name=f"UV{uv_i}")
+            name = f"UVMap{uv_i}" if uv_i > 0 else "UVMap"
+            b_mesh.uv_layers.new(name=name)
             b_mesh.uv_layers[-1].data.foreach_set("uv",
                                                   [coord for uv in [uv_set[loop.vertex_index] for loop in b_mesh.loops]
                                                    for coord in (uv.u, 1.0 - uv.v)])
 
     @staticmethod
     def map_normals(b_mesh, normals):
-        """Import nif normals as custom normals."""
         assert len(b_mesh.vertices) == len(normals)
-        # set normals
+        # Set normals
         if NifOp.props.use_custom_normals:
             no_array = normals
-            # the normals need to be pre-normalized or blender will do it inconsistely, leading to marked sharp edges
+            # The normals need to be pre-normalized or blender will do it inconsistently, leading to marked sharp edges
             no_array = Vertex.normalize(no_array)
-            # use normals_split_custom_set_from_vertices to set the loop custom normals from the per-vertex normals
-            # b_mesh.use_auto_smooth = True
+            # Use normals_split_custom_set_from_vertices to set the loop custom normals from the per-vertex normals
             b_mesh.normals_split_custom_set_from_vertices(no_array)
 
     @staticmethod
