@@ -42,11 +42,9 @@ import bpy
 from io_scene_niftools.modules.nif_export.animation.material import MaterialAnimation
 from io_scene_niftools.modules.nif_export.block_registry import block_store
 from io_scene_niftools.utils.logging import NifLog
-from io_scene_niftools.utils.singleton import NifData
+from io_scene_niftools.utils.singleton import NifData, NifOp
 from nifgen.formats.nif import classes as NifClasses
 
-
-EXPORT_OPTIMIZE_MATERIALS = True
 
 class MaterialProperty:
     """
@@ -127,7 +125,7 @@ class MaterialProperty:
                 continue
 
             # when optimization is enabled, ignore material name
-            if EXPORT_OPTIMIZE_MATERIALS:
+            if NifOp.props.optimise_materials:
                 ignore_strings = not (n_block.name in specialnames)
             else:
                 ignore_strings = False
