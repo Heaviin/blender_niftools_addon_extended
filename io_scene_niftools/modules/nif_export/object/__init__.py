@@ -108,50 +108,35 @@ class Object:
         :param n_node_type:
         """
 
-        # Can we export this object?
+        # Can we export this Blender object?
         if not b_obj or not b_obj in self.b_exportable_objects:
-            return None
+            return
 
         if b_obj.type == 'MESH':
             # Export a geometry block
-
-            # If this mesh has children or more than one material it gets wrapped in a purpose-made NiNode
-            is_multi_material = len(set([f.material_index for f in b_obj.data.polygons])) > 1
-
-            # Export a single NiGeometry block
-            if not (b_obj.children or is_multi_material):
-                n_ni_geometry = self.mesh_helper.export_geometry(b_obj, n_parent_node, self.n_root_node)
-                if not self.n_root_node:
-                    self.n_root_node = n_ni_geometry
-                DICT_NAMES[b_obj.name] = n_ni_geometry
-                return n_ni_geometry
-
-            # Mesh with armature parent should not have animation!
             if b_obj.parent and b_obj.parent.type == 'ARMATURE' and b_obj.animation_data and b_obj.animation_data.action:
                 NifLog.warn(f"Mesh {b_obj.name} is skinned but also has object animation! "
                             f"The NIF format does not support this. Ignoring...")
 
+            if not self.n_root_node:
+                self.n_root_node = block_store.create_block("NiNode")
+                n_parent_node = self.n_root_node
+
+            self.mesh_helper.export_geometry(b_obj, n_parent_node, self.n_root_node)
+            
+            return
+
         # Everything else (empty/armature) is a node
         n_node = types.create_ninode(b_obj, n_node_type=n_node_type)
+        DICT_NAMES[b_obj.name] = n_node
 
         if not self.n_root_node:
             self.n_root_node = n_node
 
-        # Make it a child of its parent in the NIF, if it has one
-        if n_parent_node:
-            n_parent_node.add_child(n_node)
+        self.set_object_fields(b_obj, n_node, n_parent_node)
+        n_node.name = block_store.get_full_name(b_obj)
 
-        # And fill in this node's properties
-        n_node.name = block_store.get_full_name(b_obj)  # Name
-        math.set_object_matrix(b_obj, n_node)  # Transforms
-        self.set_object_flags(b_obj, n_node)  # Object flags
-
-        self.object_property_helper.export_object_properties(b_obj, n_node)  # Object properties
-
-        if b_obj.type == 'MESH':
-            # If b_obj is a multi-material mesh, export the geometries as children of this node
-            n_ni_geometry = self.mesh_helper.export_geometry(b_obj, n_node, self.n_root_node)
-        elif b_obj.type == 'ARMATURE':
+        if b_obj.type == 'ARMATURE':
             # If b_obj is an armature, export the bones as node children of this node
             self.armature_helper.export_bones(b_obj, n_node)
             # Special case: objects parented to armature bones
@@ -171,8 +156,12 @@ class Object:
             for b_child in b_obj.children:
                 self.export_object_hierarchy(b_child, n_node)
 
-        DICT_NAMES[b_obj.name] = n_node
-        return n_node
+    def set_object_fields(self, b_obj, n_node, n_parent_node=None):
+        if n_parent_node:
+            n_parent_node.add_child(n_node)
+
+        math.set_object_matrix(b_obj, n_node)
+        self.set_object_flags(b_obj, n_node)
 
     def set_object_flags(self, b_obj, n_node):
         """Set node object flags if not already set in the properties panel."""

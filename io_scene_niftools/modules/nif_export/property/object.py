@@ -60,13 +60,13 @@ class ObjectProperty:
         self.material_property_helper = MaterialProperty()
         self.texture_property_helper = TextureProperty()
 
-    def export_object_properties(self, b_obj, n_node):
+    def export_object_properties(self, b_obj, n_node, idx=0):
         """
         This is the main property processor that attaches
         all suitable properties gauged from b_obj and b_mat to n_block.
         """
 
-        b_mat = b_obj.active_material
+        b_mat = b_obj.material_slots[idx].material
 
         if b_obj and b_mat:
             # export and add properties to n_block

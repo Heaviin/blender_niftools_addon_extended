@@ -124,7 +124,7 @@ class Geometry:
             # Shape keys are only present on the raw, unevaluated mesh
             self.geometry_animation_helper.export_geometry_animations(b_mesh, n_ni_geometry, vertex_map)
 
-        return n_ni_geometry_blocks[0]
+        return n_ni_geometry_blocks
 
     def export_ni_geometry(self, b_obj, b_mat, b_mat_index, n_parent_node):
         """Export a NiGeometry block."""
@@ -164,7 +164,7 @@ class Geometry:
             n_ni_geometry.unknown_integer = -1
 
         math.set_object_matrix(b_obj, n_ni_geometry)  # Add transforms
-        self.object_property_helper.export_object_properties(b_obj, n_ni_geometry)  # Object properties
+        self.object_property_helper.export_object_properties(b_obj, n_ni_geometry, b_mat_index)  # Object properties
 
         return n_ni_geometry
 
