@@ -52,6 +52,10 @@ class Animation:
         # to prevent overwriting existing animations from older imports
         # and still be able to access existing actions from this run
         self.actions = {}
+        # Blender 4.4+ stores F-curves in per-datablock action slots rather
+        # than directly on Action. Remember the datablock most recently
+        # assigned to each action so curves are created in the correct slot.
+        self.action_datablocks = {}
         self.max_key_time = 0
 
     @staticmethod
@@ -109,19 +113,44 @@ class Animation:
             b_obj.animation_data_create()
         # set as active action on object
         b_obj.animation_data.action = b_action
+        self.action_datablocks[b_action.as_pointer()] = b_obj
         return b_action
+
+    @staticmethod
+    def get_action_fcurves(action):
+        """Return all F-curves from legacy or layered Blender actions."""
+        if hasattr(action, "fcurves"):
+            return action.fcurves
+        return [
+            fcurve
+            for layer in action.layers
+            for strip in layer.strips
+            if hasattr(strip, "channelbags")
+            for channelbag in strip.channelbags
+            for fcurve in channelbag.fcurves
+        ]
+
+    def new_fcurve(self, action, data_path, index, action_group=""):
+        """Create an F-curve using the API available in this Blender version."""
+        if hasattr(action, "fcurves"):
+            return action.fcurves.new(
+                data_path=data_path, index=index, action_group=action_group)
+
+        datablock = self.action_datablocks[action.as_pointer()]
+        return action.fcurve_ensure_for_datablock(
+            datablock, data_path, index=index, group_name=action_group)
 
     def create_fcurves(self, action, dtype, drange, flags, bone_name, key_name):
         """ Create fcurves in action for desired conditions. """
         # armature pose bone animation
         if bone_name:
             fcurves = [
-                action.fcurves.new(data_path=f'pose.bones["{bone_name}"].{dtype}', index=i, action_group=bone_name)
+                self.new_fcurve(action, f'pose.bones["{bone_name}"].{dtype}', i, bone_name)
                 for i in drange]
         # shapekey pose bone animation
         elif key_name:
             fcurves = [
-                action.fcurves.new(data_path=f'key_blocks["{key_name}"].{dtype}', index=0, )
+                self.new_fcurve(action, f'key_blocks["{key_name}"].{dtype}', 0)
             ]
         else:
             # Object animation (non-skeletal) is lumped into the "LocRotScale" action_group
@@ -130,7 +159,7 @@ class Animation:
             # Non-transformaing animations (eg. visibility or material anims) use no action groups
             else:
                 action_group = ""
-            fcurves = [action.fcurves.new(data_path=dtype, index=i, action_group=action_group) for i in drange]
+            fcurves = [self.new_fcurve(action, dtype, i, action_group) for i in drange]
         if flags:
             self.set_extrapolation(self.get_extend_from_flags(flags), fcurves)
         return fcurves

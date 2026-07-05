@@ -38,8 +38,7 @@
 # ***** END LICENSE BLOCK *****
 
 
-from bpy.types import Panel
-from bpy_types import UIList
+from bpy.types import Panel, UIList
 
 from io_scene_niftools.utils.decorators import register_classes, unregister_classes
 

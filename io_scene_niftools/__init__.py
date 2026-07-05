@@ -49,15 +49,15 @@ from io_scene_niftools.utils.logging import NifLog
 
 # Blender addon info
 bl_info = {
-    "name": "NifTools",
-    "description": "Import and export files in the NetImmerse/Gamebryo formats (.nif, .kf, .egm)",
-    "author": "NifTools Team",
-    "blender": (4, 5, 4),
-    "version": (0, 2, 1),  # Can't read from VERSION (Blender wants it hardcoded)
+    "name": "Blender NifTools Extended",
+    "description": "Extended NIF import/export with Blender 5.x compatibility and additional fixes",
+    "author": "NifTools Team; extended fork maintained by Heaviin",
+    "blender": (5, 0, 0),
+    "version": (0, 3, 0),  # Can't read from VERSION (Blender wants it hardcoded)
     "api": 39257,
     "location": "File > Import-Export",
-    "wiki_url": "https://blender-niftools-addon.readthedocs.io/",
-    "tracker_url": "https://github.com/DuncanWasHere/blender_niftools_addon/issues",
+    "wiki_url": "https://github.com/Heaviin/blender_niftools_addon_extended",
+    "tracker_url": "https://github.com/Heaviin/blender_niftools_addon_extended/issues",
     "support": "COMMUNITY",
     "category": "Import-Export"
 }
@@ -124,8 +124,8 @@ def configure_autoupdater():
     addon_updater_ops.updater.use_releases = True
     addon_updater_ops.updater.remove_pre_update_patterns = ["*.py", "*.pyc", "*.xml", "*.exe",
                                                             "*.rst", "VERSION", "*.xsd"]
-    addon_updater_ops.updater.user = "DuncanWasHere"
-    addon_updater_ops.updater.repo = "blender_niftools_addon"
-    addon_updater_ops.updater.website = "https://github.com/DuncanWasHere/blender_niftools_addon"
+    addon_updater_ops.updater.user = "Heaviin"
+    addon_updater_ops.updater.repo = "blender_niftools_addon_extended"
+    addon_updater_ops.updater.website = "https://github.com/Heaviin/blender_niftools_addon_extended"
     addon_updater_ops.updater.version_min_update = (0, 0, 4)
 

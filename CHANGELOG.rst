@@ -1,3 +1,16 @@
+Version v0.3.0
+===============
+
+Initial Blender NifTools Extended compatibility release.
+
+- Added baseline support for Blender 5.x.
+- Replaced removed ``bpy_types`` and legacy RGB shader-node APIs.
+- Added support for Blender's layered Actions and per-datablock F-Curve slots.
+- Fixed importing Bethesda environment-mask-only materials.
+- Fixed round-trip export of Bethesda environment masks with and without an environment map.
+- Fixed corrupted triangle-strip indices on 64-bit Windows by using 32-bit meshoptimizer buffers.
+- Retained the fork's multi-material mesh and MOPP improvements.
+
 Version v0.1.2
 ===============
 - #[todo]

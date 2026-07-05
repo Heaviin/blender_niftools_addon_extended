@@ -36,6 +36,7 @@ docker compose up || exit 1
 
 echo "Copying loose files"
 cp -r "$GENERATED_FOLDER" "${DEPS_OUT:-${BUILD_DIR}/dependencies}/nifgen"
+cp -r "${SCRIPT_DIR}/dependency_overrides/." "${DEPS_OUT:-${BUILD_DIR}/dependencies}"
 cp "${ROOT}"/AUTHORS.rst "${ADDON_OUT}"
 cp "${ROOT}"/CHANGELOG.rst "${ADDON_OUT}"
 cp "${ROOT}"/LICENSE.rst "${ADDON_OUT}"

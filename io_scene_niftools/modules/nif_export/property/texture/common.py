@@ -43,7 +43,7 @@ import os.path
 import bpy
 import io_scene_niftools
 from io_scene_niftools.modules.nif_export.block_registry import block_store
-from io_scene_niftools.utils.consts import TEX_SLOTS, USED_EXTRA_SHADER_TEXTURES
+from io_scene_niftools.utils.consts import TEX_SLOTS, BS_TEX_SLOTS, USED_EXTRA_SHADER_TEXTURES
 from io_scene_niftools.utils.logging import NifLog, NifError
 from io_scene_niftools.utils.singleton import NifData
 from io_scene_niftools.utils.singleton import NifOp
@@ -63,8 +63,13 @@ class TextureCommon:
                            "socket_index": 2, "texture_type": bpy.types.ShaderNodeTexImage},  # Displacement
         TEX_SLOTS.ENV_MAP: {"shader_type": bpy.types.ShaderNodeBsdfAnisotropic,
                             "socket_index": 0, "texture_type": bpy.types.ShaderNodeTexEnvironment},  # Color
+        # An imported environment mask normally controls the environment
+        # shader's roughness. Valid mask-only Bethesda materials have no
+        # environment shader, so the importer connects it to Principled
+        # Roughness instead. Support both graph shapes for round-trip export.
         TEX_SLOTS.ENV_MASK: {"shader_type": bpy.types.ShaderNodeBsdfAnisotropic,
-                             "socket_index": 1, "texture_type": bpy.types.ShaderNodeTexImage}  # Roughness
+                             "socket_name": "Roughness",
+                             "texture_type": bpy.types.ShaderNodeTexImage}
     }
 
     def __init__(self):
@@ -107,11 +112,34 @@ class TextureCommon:
         for shader_node in shader_nodes:
             for slot_name, mapping in self.TEX_SLOT_MAP.items():
                 if isinstance(shader_node, mapping["shader_type"]):
-                    input_socket = shader_node.inputs[mapping["socket_index"]]
+                    if "socket_name" in mapping:
+                        input_socket = shader_node.inputs.get(mapping["socket_name"])
+                    else:
+                        input_socket = shader_node.inputs[mapping["socket_index"]]
+                    if input_socket is None:
+                        continue
                     if input_socket.is_linked:
                         texture_node = self.get_input_node_of_type(input_socket, mapping["texture_type"])
                         if texture_node:
                             self._assign_texture_to_slot(slot_name, texture_node, b_mat.name)
+
+        # Mask-only Bethesda materials have no environment shader. The
+        # importer links their labelled environment-mask texture through the
+        # Value Mask group to Principled Roughness. Only use this fallback
+        # when the normal environment-shader path found no mask; other maps
+        # (notably normal-map alpha) may also legitimately drive roughness.
+        if self.slots[TEX_SLOTS.ENV_MASK] is None:
+            for shader_node in shader_nodes:
+                if not isinstance(shader_node, bpy.types.ShaderNodeBsdfPrincipled):
+                    continue
+                roughness_input = shader_node.inputs.get("Roughness")
+                if roughness_input is None or not roughness_input.is_linked:
+                    continue
+                texture_node = self.get_input_node_of_type(
+                    roughness_input, bpy.types.ShaderNodeTexImage)
+                if texture_node and texture_node.label == BS_TEX_SLOTS.ENVIRONMENT_MASK:
+                    self._assign_texture_to_slot(TEX_SLOTS.ENV_MASK, texture_node, b_mat.name)
+                    break
 
     def _get_shader_nodes(self, b_mat):
         """Retrieve all shader nodes in the material."""

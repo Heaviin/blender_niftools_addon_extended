@@ -28,6 +28,7 @@ python -m pip install "PyFFI==%PYFFI_VERSION%" --target="%DEPS%"
 docker compose up || exit 1
 
 xcopy "%GENERATED_FOLDER%" "%DEPS%\nifgen" /s /q /i
+xcopy "%DIR%\dependency_overrides\*" "%DEPS%" /s /q /y /i
 
 xcopy "%ROOT%"\AUTHORS.rst io_scene_niftools
 xcopy "%ROOT%"\CHANGELOG.rst io_scene_niftools

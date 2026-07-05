@@ -1,4 +1,11 @@
-The Blender Niftools Addons enables Blender to import and export NetImmerse files including ``.nif`` and ``.kf``.
+Blender NifTools Extended
+=========================
+
+Blender NifTools Extended is a community-maintained fork of the Blender NifTools Addon. It imports and exports
+NetImmerse/Gamebryo files including ``.nif``, ``.kf``, and ``.egm``, with Blender 5.x compatibility fixes,
+quality-of-life improvements, and expanded format support such as multi-material MOPP.
+
+This is an unofficial fork. Original project credit belongs to the NifTools Team.
 
 Requirements
 ------------
@@ -8,8 +15,8 @@ Requirements
 Download
 --------
 
-* Release downloadable from `https://github.com/niftools/blender_niftools_addon/releases
-  <https://github.com/niftools/blender_niftools_addon/releases>`_ 
+* Releases are available from `GitHub
+  <https://github.com/Heaviin/blender_niftools_addon_extended/releases>`_.
   
 Currently we are working towards a v1.0.0, so although there is no stable releases of Blender Niftools Addon, each
 milestone release will bring more features.
@@ -30,8 +37,8 @@ Support
 Issues
 ------
 
-* Check the Blender Niftools Addon repository's for existing issue `Issue tracker 
-  <http://github.com/niftools/blender_niftools_addon/issues>`_
+* Check the fork's `issue tracker
+  <https://github.com/Heaviin/blender_niftools_addon_extended/issues>`_ for existing reports.
 * If the issue has not been reported please create a new report, filling in the template **completely**.
 
 Fork
@@ -39,6 +46,6 @@ Fork
 
 .. code-block:: shell
   
-  git clone --recursive https://github.com/niftools/blender_niftools_addon.git
+  git clone --recursive https://github.com/Heaviin/blender_niftools_addon_extended.git
 
 Please check `this temporary guide <https://github.com/niftools/blender_niftools_addon/issues/566#issuecomment-1566743313>`_ for building the ``generated`` module.
