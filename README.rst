@@ -5,7 +5,7 @@ Blender NifTools Extended is a community-maintained fork of the Blender NifTools
 NetImmerse/Gamebryo files including ``.nif``, ``.kf``, and ``.egm``, with Blender 5.x compatibility fixes,
 quality-of-life improvements, and expanded format support such as multi-material MOPP.
 
-This is an unofficial fork. Original project credit belongs to the NifTools Team.
+This is an unofficial fork based on DuncanWasHere's fork. Original project credit belongs to the NifTools Team.
 
 Requirements
 ------------
